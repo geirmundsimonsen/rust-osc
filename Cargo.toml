@@ -1,0 +1,4 @@
+[package]
+name = "osc2"
+version = "0.1.0"
+authors = ["Geirmund Simonsen <geirmund.simonsen@gmail.com>"]

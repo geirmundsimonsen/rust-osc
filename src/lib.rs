@@ -1,136 +1,163 @@
 /*
-OscMessage usage:
+PURPOSE:
 
-let mut msg = OscMessage::new();
-msg.address("/foo");
-msg.add_arg();
-msg.add_arg();
-msg.args[0].string("some text");
-msg.args(1).float32(3.14);
-msg.update_typelist();
-let payload = msg.get_bytes();
+A simple Osc message implementation for rust. No osc bundles
+yet. I try to aim for speed of execution, meaning the 
+backing byte-array will be assembled after each
+add/change/remove opeation. Changes that doesn't alter the
+byte structure (like changing a float value) should be speedy.
+Changes to a longer/shorter address will be more expensive.
+
+USAGE:
+
+let mut msg = osc2::OscMessage2::new("/foo");
+msg.add(Arg::String("bar"));
+msg.add(Arg::F32(3.14));
+msg.add(Arg::I32(42));
+
+msg.get_bytes() returns a slice of the underlying u8-vector,
+send it with UDP.
+
+msg.get_bytes_copy() returns a copy of the vector.
+
+TODO:
+
+implement the change and remove functions.
 */
 
 use std::mem;
 
-enum ArgType {
-	STRING,
-	INT32,
-	FLOAT32,
-	BLOB
-}
-
-pub struct Argument {
-	arg_type: ArgType,
-	bytearray: Vec<u8>,
-}
-
-impl Argument {
-	fn new() -> Argument {
-		Argument { arg_type: ArgType::STRING, bytearray: Vec::with_capacity(4) }
-	}
-
-	pub fn int32(&mut self, i: i32) {
-		self.bytearray.clear();
-
-		let raw_bytes: [u8; 4] = unsafe { mem::transmute(i.to_be()) };
-
-		for byte in raw_bytes.iter() {
-			self.bytearray.push(*byte);
-		}
-
-		self.arg_type = ArgType::INT32;
-	}
-
-	pub fn float32(&mut self, f: f32) {
-		self.bytearray.clear();
-
-		let raw_bytes: [u8; 4] = unsafe { mem::transmute(f) };
-
-		for byte in raw_bytes.iter().rev() {
-			self.bytearray.push(*byte);
-		}
-
-		self.arg_type = ArgType::FLOAT32;
-	}
-
-	pub fn string(&mut self, s: &str) {
-		self.bytearray.clear();
-
-		for byte in s.bytes() {
-			self.bytearray.push(byte);
-		}
-		self.bytearray.push(0);
-
-		while self.bytearray.len() % 4 != 0 {
-			self.bytearray.push(0);
-		}
-
-		self.arg_type = ArgType::STRING;
-	}
+pub enum Arg<'a> {
+	String(&'a str),
+	I32(i32),
+	F32(f32),
 }
 
 pub struct OscMessage {
-	address: Vec<u8>,
-	typelist: Vec<u8>,
-	pub args: Vec<Argument>,
-	bytes: Vec<u8>
+	bytes: Vec<u8>,
+	typelist: Vec<char>,
+	typelist_start: u16,
 }
 
 impl OscMessage {
-	pub fn new() -> OscMessage {
-		OscMessage { 
-			address: Vec::with_capacity(64), 
-			typelist: Vec::with_capacity(8), 
-			args: Vec::new(),
-			bytes: Vec::with_capacity(256),
-		}
-	}
+	pub fn new(address: &str) -> OscMessage2 {
+		let mut bytes: Vec<u8> = Vec::with_capacity(64);
+		let typelist: Vec<char> = Vec::with_capacity(8);
 
-	pub fn address(&mut self, address: &str) {
-		self.address.clear();
-
+		// address to bytes
 		for byte in address.bytes() {
-			self.address.push(byte);
+			bytes.push(byte);
 		}
-		self.address.push(0);
+		bytes.push(0);
 
-		while self.address.len() % 4 != 0 {
-			self.address.push(0);
+		while bytes.len() % 4 != 0 {
+			bytes.push(0);
+		}
+
+		let typelist_start = bytes.len() as u16;
+
+		// initialized typelist to bytes
+		bytes.push(44);
+		bytes.push(0);
+		bytes.push(0);
+		bytes.push(0);
+
+		// return an initial oscmessage
+		OscMessage2 { 
+			bytes: bytes, 
+			typelist: typelist,
+			typelist_start: typelist_start,
 		}
 	}
 
-	pub fn add_arg(&mut self) {
-		self.args.push(Argument::new());
-	}
+	pub fn add(&mut self, arg: Arg) {
+		match arg {
+			Arg::String(s) => {
+				self.add_type('s');
 
-	pub fn update_typelist(&mut self) {
-		self.typelist.clear();
-		self.typelist.push(44);
+				for byte in s.bytes() {
+					self.bytes.push(byte);
+				}
+				self.bytes.push(0);
 
-		for arg in self.args.iter() {
-			match arg.arg_type {
-				ArgType::FLOAT32 => self.typelist.push(102),
-				ArgType::INT32 => self.typelist.push(105),
-				ArgType::STRING => self.typelist.push(115),
-				ArgType::BLOB => panic!("blob not supported"),
+				while self.bytes.len() % 4 != 0 {
+					self.bytes.push(0);
+				}
+			},
+			Arg::I32(i) => {
+				self.add_type('i');
+
+				let raw_bytes: [u8; 4] = unsafe { mem::transmute(i.to_be()) };
+
+				for byte in raw_bytes.iter() {
+					self.bytes.push(*byte);
+				}
+			},
+			Arg::F32(f) => {
+				self.add_type('f');
+
+				let raw_bytes: [u8; 4] = unsafe { mem::transmute(f) };
+
+				for byte in raw_bytes.iter().rev() {
+					self.bytes.push(*byte);
+				}
 			}
 		}
-
-		while self.typelist.len() % 4 != 0 {
-			self.typelist.push(0);
-		}
 	}
 
-	pub fn get_bytes(&mut self) -> &[u8] {
-		self.bytes.clear();
-		for byte in self.address.iter() { self.bytes.push(*byte); }
-		for byte in self.typelist.iter() { self.bytes.push(*byte); }
-		for arg in self.args.iter() {
-			for byte in arg.bytearray.iter() {
-				self.bytes.push(*byte);
-			}
-		}
+	pub fn change(argNo: u32) {
+
+	}
+
+	pub fn remove(argNo: u32) {
+
+	}
+
+	pub fn removeAll() {
+
+	}
+
+	pub fn address(address: &str) {
+
+	}
+
+	pub fn get_bytes(&self) -> &[u8] {
 		&self.bytes[..]
+	}
+
+	pub fn get_bytes_copy(&self) -> Vec<u8> {
+		self.bytes.clone()
+	}
+
+	// method depends on typelist_start and typelist.len()
+	// be sure to update typelist_start in other methods
+	fn add_type(&mut self, c: char) {
+		if (self.typelist.len() + 2) % 4 == 0 {
+			// we expand!
+			let insert_point = 
+				self.typelist_start as usize + (self.typelist.len() / 4 + 1) * 4;
+			for _ in 0..4 {
+				self.bytes.insert(insert_point, 0);
+			}
+		}
+
+		self.bytes[self.typelist_start as usize + self.typelist.len() + 1] = c as u8;
+		self.typelist.push(c);
+	}
+
+	pub fn debug(&self) {
+		let mut count = 0;
+
+		for byte in self.bytes.iter() {
+			if count % 4 == 0 { println!("") }
+
+			if *byte == 0 {
+				print!(".  ");
+			} else {
+				print!("{} ", *byte);
+			}
+
+			count += 1;
+		}
 	}
 }

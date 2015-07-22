@@ -6,7 +6,7 @@ use osc2::Arg;
 fn main() {
 	let socket = net::UdpSocket::bind("127.0.0.1:12423").unwrap();
 
-	let mut msg = osc2::OscMessage2::new("/foo");
+	let mut msg = osc2::OscMessage::new("/foo");
 	msg.add(Arg::String("yeys"));
 	msg.add(Arg::F32(984.423));
 	msg.debug();

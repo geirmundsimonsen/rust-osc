@@ -40,7 +40,7 @@ pub struct OscMessage {
 }
 
 impl OscMessage {
-	pub fn new(address: &str) -> OscMessage2 {
+	pub fn new(address: &str) -> OscMessage {
 		let mut bytes: Vec<u8> = Vec::with_capacity(64);
 		let typelist: Vec<char> = Vec::with_capacity(8);
 
@@ -63,7 +63,7 @@ impl OscMessage {
 		bytes.push(0);
 
 		// return an initial oscmessage
-		OscMessage2 { 
+		OscMessage { 
 			bytes: bytes, 
 			typelist: typelist,
 			typelist_start: typelist_start,
